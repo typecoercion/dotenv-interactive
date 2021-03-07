@@ -1,0 +1,78 @@
+#!/bin/bash
+
+CB="\033[00;34m" # blue
+CG="\033[00;32m" # green
+CP="\033[00;35m" # purple
+CR="\033[00;31m" # red
+CY="\033[00;33m" # yellow
+CN="\033[0m"     # none
+
+set -e
+
+msg_exit() {
+  echo -en "${CR}==> ${CR}[EXIT] ${CN}${1}\n"
+  exit 1;
+}
+
+msg_done() {
+  echo -en "${CB}==> ${CG}[DONE] ${CN}${1}\n"
+}
+
+msg_info() {
+  echo -en "${CB}==> ${CY}[INFO] ${CN}${1}\n"
+}
+
+msg_skip() {
+  echo -en "${CB}==> ${CP}[SKIP] ${CN}${1}\n"
+}
+
+require_bin() {
+  declare -a required_bin=(
+    "awk" "cut" "grep" "head" "sed"
+  )
+  for req in "${required_bin[@]}"; do
+    type "${req}" >/dev/null 2>&1 || {
+      msg_exit "requires bin ${CY}${req}${CN} to run this script"
+    }
+  done
+}
+
+init_dotenv() {
+  file_req='.env.required'
+  file_out='.env'
+  file_swp='.env.swp'
+  if [[ ! -f $file_req ]]; then
+    msg_skip "requires .env.required file; skipping"
+    exit 1;
+  fi
+  if [[ -f $file_out ]]; then
+    msg_skip "existing .env file; skipping"
+  else
+    msg_info "setting up .env file"
+    content=$(<$file_req)
+    cp $file_req $file_swp
+    for e in $content; do
+      if grep -q '\=$' <<< "$e"; then
+        trim="${e##*( )}"
+        spec=$(grep -B1 "$e" < "${file_req}" | head -n1)
+        text=$(echo "${spec}" | cut -f1 -d'|')
+        read_ops="${read_ops}"
+        comment_match="^[#;].*"
+        if [[ $text =~ $comment_match ]]; then
+          read_ops=""; [[ "$spec" == *'@secret'* ]] && read_ops="-s"
+          text=$(echo "${text:1}" | awk '{$1=$1};1')
+          echo -en "${CB}==>${CP} ${text}${CN}\n"
+        fi
+        # shellcheck disable=SC2229
+        read -r $read_ops -p "${trim}" PROMPT_VAL
+        [[ "$read_ops" == *'-s'* ]] && echo
+        sed -i '' "s|${trim}|${trim}${PROMPT_VAL}|g" $file_swp
+      fi
+    done
+    mv $file_swp $file_out
+    msg_done 'completed .env saved'
+  fi
+}
+
+require_bin
+init_dotenv
